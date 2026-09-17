@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+
+# Env / secrets
+.env
+*.env.local
+
+# Databases / artifacts
+*.db
+*.sqlite3
+*.log
+reports/
+artifacts/
+
+# Node (frontend, later phases)
+node_modules/
+dist/

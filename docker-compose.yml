@@ -1,0 +1,105 @@
+name: aegis
+
+# AEGIS Phase 0 - dev orchestration.
+#
+# Air-gap note: every service lives on the `internal` network which is declared
+# `internal: true`. Docker blocks ALL outbound egress from internal networks,
+# which encodes the `egress: drop` rule from rules.md at the network boundary.
+# The only host-visible entry point is the `api` port mapping (127.0.0.1:8000),
+# which is intentional ingress for the operator, not egress.
+#
+# Docker Desktop (Windows/macOS) limitation: it does NOT forward published host
+# ports from containers on `internal: true` networks (Linux does). So `api`
+# additionally attaches to the `ingress` network purely so 127.0.0.1:8000 is
+# reachable for local development. Deployment-only note: on a Linux host this
+# network (and the attached `ports`) can be dropped entirely and `api` stays
+# internal-only, preserving strict egress:drop for the platform itself.
+#
+# Offline-build note: all images (postgres, redis, python) are pinned to
+# public/private registry tags; in a fully air-gapped deployment these would be
+# pre-loaded from a local registry mirror with no runtime network access.
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: aegis
+      POSTGRES_PASSWORD: aegis
+      POSTGRES_DB: aegis
+    volumes:
+      - aegis_pgdata:/var/lib/postgresql/data
+      - ./backend/scripts/db_init.sql:/docker-entrypoint-initdb.d/01_audit_triggers.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aegis -d aegis"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - internal
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - internal
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./backend
+    env_file:
+      - .env
+    environment:
+      AEGIS_DATABASE_URL: postgresql+asyncpg://aegis:aegis@db:5432/aegis
+      AEGIS_REDIS_URL: redis://redis:6379/0
+      # Dev: process sandbox (timeout + output caps). The docker sandbox backend
+      # (--network none) is the air-gapped production posture; it needs the host
+      # docker socket mounted into the API container (Docker-outside-of-Docker).
+      AEGIS_SANDBOX_MODE: process
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - internal
+      - ingress
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ./backend
+    env_file:
+      - .env
+    environment:
+      AEGIS_DATABASE_URL: postgresql+asyncpg://aegis:aegis@db:5432/aegis
+      AEGIS_REDIS_URL: redis://redis:6379/0
+      AEGIS_SANDBOX_MODE: process
+    command: ["celery", "-A", "app.core.celery_app.celery", "worker", "--loglevel=info"]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - internal
+    restart: unless-stopped
+
+volumes:
+  aegis_pgdata:
+
+networks:
+  internal:
+    internal: true
+  ingress:
+    # Dev-only (Docker Desktop port-forwarding workaround). Peer isolation on
+    # the default bridge is irrelevant since only `api` attaches here.
+    driver: bridge

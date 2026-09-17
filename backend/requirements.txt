@@ -1,0 +1,18 @@
+# AEGIS Phase 0 - runtime dependencies (all installed offline-buildable)
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.30
+sqlalchemy[asyncio]>=2.0.30
+asyncpg>=0.29
+aiosqlite>=0.20
+pydantic>=2.7
+pydantic-settings>=2.3
+redis>=5.0
+celery>=5.4
+jsonschema>=4.22
+structlog>=24.1
+psutil>=5.9
+
+# Testing
+pytest>=8.2
+pytest-asyncio>=0.23
+httpx>=0.27
